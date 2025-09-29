@@ -1,165 +1,231 @@
 # FireMon Zone Access Matrix Report Generator
 
-A Python script that generates comprehensive zone-to-zone access matrix reports from FireMon security rules, providing both CSV and HTML output formats for network security analysis.
+A Python script that generates comprehensive zone-based access matrix reports from FireMon Security Manager, providing visual insights into security rule configurations across firewall zones.
+
+## Overview
+
+This tool connects to FireMon Security Manager via API to analyze security rules and generate zone-to-zone access matrices that show:
+- Which zones can communicate with each other
+- Number of rules allowing access between zones
+- Services/ports permitted between zones
+- Applications allowed between zones
+- Identification of rules containing public/external IP addresses (non-RFC1918)
 
 ## Features
 
-- **Zone Access Matrix**: Creates a clear matrix view showing traffic flow between security zones
-- **Dual Output Formats**: 
-  - HTML with interactive clickable cells showing service/application details
-  - CSV matrix format for easy data analysis
-- **Multiple Device Support**: Process single devices, multiple devices, device groups, or all devices in a domain
-- **Service & Application Details**: Shows allowed protocols, ports, and applications for each zone pair
-- **Direct FireMon Integration**: Links in HTML reports open relevant rules directly in FireMon interface
-- **Timestamped Reports**: All reports include timestamps to prevent overwrites
-- **Progress Tracking**: Clear visual feedback during processing with emojis and progress indicators
+- **Multiple Device Support**: Analyze single devices, multiple devices, device groups, or all devices in a domain
+- **Zone Filtering**: Focus on specific zones of interest
+- **Subnet Filtering**: Filter rules by source/destination subnets
+- **Public IP Detection**: Optionally highlight zone pairs that have rules with non-RFC1918 addresses
+- **Multiple Output Formats**: Generate CSV and/or interactive HTML reports
+- **Interactive HTML Reports**: Clickable cells with detailed service/application information and direct FireMon links
+- **Sticky Headers**: HTML reports feature floating headers for easy navigation of large matrices
+- **Non-Interactive Mode**: Support for automation and cron jobs
+- **Comprehensive Logging**: Detailed logging for troubleshooting
 
-## Requirements
+## Prerequisites
 
+### System Requirements
 - Python 3.6 or higher
-- FireMon Security Manager access
-- FireMon Python libraries (automatically detected from `/usr/lib/firemon/devpackfw/lib`)
-- `requests` library (included with FireMon)
+- FireMon Security Manager access with API credentials
+- Network connectivity to FireMon server
+
+### Python Dependencies
+The script uses standard library modules plus:
+- `requests` (included in FireMon's Python environment)
+
+### FireMon Requirements
+- FireMon Security Manager with API access enabled
+- User account with appropriate permissions to:
+  - Authenticate via API
+  - Read device configurations
+  - Query security rules
+  - Access device groups (if using group features)
 
 ## Installation
 
-Copy the script to your FireMon server:
+1. Copy the script to your FireMon server or a system with API access:
 ```bash
-scp zone-services-report.py firemon@your-firemon-server:~/
+scp zone-services-report.py user@firemon-server:/path/to/script/
 ```
+
+2. Make the script executable:
+```bash
+chmod +x zone-services-report.py
+```
+
+3. The script automatically detects and adds FireMon Python paths. No additional setup required.
 
 ## Usage
 
-Run the script and follow the interactive prompts:
-
+### Interactive Mode (Default)
+Simply run the script and follow the prompts:
 ```bash
 python3 zone-services-report.py
 ```
 
-### Interactive Options
+### Non-Interactive Mode (For Automation)
 
-1. **FireMon Host**: Enter your FireMon server URL (e.g., `https://firemon.example.com`)
-2. **Authentication**: Provide your FireMon username and password
-3. **Device Selection**:
-   - Option 1: Single Device ID
-   - Option 2: Multiple Device IDs (comma-separated)
-   - Option 3: All Devices in domain
-   - Option 4: Device Group ID
-4. **Report Type**:
-   - Option 1: CSV only
-   - Option 2: HTML only
-   - Option 3: Both CSV and HTML
-
-## Output
-
-### File Naming Convention
-
-Reports are saved with timestamps in the `reports/` directory:
-- Single device: `access_matrix_DeviceName_YYYYMMDD_HHMMSS.csv`
-- Device group: `access_matrix_device_group_ID_YYYYMMDD_HHMMSS.html`
-- All devices: `access_matrix_all_devices_YYYYMMDD_HHMMSS.csv`
-
-### CSV Matrix Format
-
-The CSV output provides a matrix view with:
-- **First Row**: Header with all destination zones
-- **First Column**: Source zones
-- **Cell Content**: 
-  - `Rules: X | Services: tcp/22, tcp/443 | Apps: SSH, HTTPS` for allowed traffic
-  - Empty cell for no access
-  - `N/A` for same-zone intersections
-
-Example:
-```csv
-Source \ Destination,DMZ,Internal,External,Management
-DMZ,N/A,Rules: 5 | Services: tcp/443,Rules: 2 | Services: tcp/80,
-Internal,Rules: 3 | Services: tcp/22,,N/A,Rules: 1 | Services: tcp/3389
-External,Rules: 1 | Services: tcp/443,,,N/A
-Management,Rules: 4 | Services: tcp/22, tcp/443,Rules: 2 | Services: tcp/161,,N/A
+#### Single Device Analysis
+```bash
+python3 zone-services-report.py \
+  --host https://firemon.example.com \
+  --username apiuser \
+  --password 'password' \
+  --device-id 123 \
+  --non-interactive
 ```
 
-### HTML Matrix Format
-
-The HTML output provides:
-- **Interactive Matrix**: Click any cell to view detailed access information
-- **Sticky Headers**: Top row and first column remain visible while scrolling
-- **Modal Details**: Shows:
-  - Zone path (source → destination)
-  - Number of rules
-  - Allowed services/ports
-  - Applications
-  - Direct link to view rules in FireMon
-- **Color Coding**:
-  - Blue cells: Access allowed (with rule count)
-  - Gray cells: No access
-  - Dark gray with ✕: Same zone (N/A)
-
-## Example Output
-
+#### Multiple Devices
+```bash
+python3 zone-services-report.py \
+  --host https://firemon.example.com \
+  --username apiuser \
+  --password 'password' \
+  --device-ids "123,456,789" \
+  --non-interactive
 ```
-================================================================
-       FIREMON ZONE ACCESS MATRIX REPORT GENERATOR
-================================================================
-Started at: 2025-09-04 15:35:00
 
-⏳ Authenticating with FireMon...
-✅ Authentication successful
-
-📋 Select Device Selection Option:
-1. Single Device ID
-2. List of Device IDs (comma-separated)
-3. All Devices
-4. Device Group ID
-Enter option (1/2/3/4): 1
-
-Enter the device ID: 2
-
-🔄 Processing 1 device(s)...
-----------------------------------------
-📍 Device 1/1 - ID: 2
-   🔍 Fetching device name for ID 2...
-   ✅ Device name: Panorama
-   📋 Fetching security rules for device 2...
-   ✅ Fetched 5653 security rules
-----------------------------------------
-✅ Total rules collected: 5653
-
-================================================================
-                 GENERATING REPORTS
-================================================================
-📝 Generating CSV matrix report...
-✅ CSV matrix report generated with 155x155 cells and 639 access paths
-
-📊 Generating HTML matrix report...
-✅ Generated 155x155 matrix with 639 access paths
-
-================================================================
-              REPORT GENERATION COMPLETE!
-================================================================
-
-📊 Summary:
-   • Devices processed: 1
-   • Total rules analyzed: 5653
-   • Timestamp: 20250904_153557
-   • Reports generated:
-
-   📄 CSV Matrix Report:
-      Location: reports/access_matrix_Panorama_20250904_153557.csv
-      Size: 45,678 bytes
-
-   🌐 HTML Matrix Report:
-      Location: reports/access_matrix_Panorama_20250904_153557.html
-      Size: 1,697,526 bytes
-
-   📁 Reports saved in: /home/firemon/reports/
-
-Completed at: 2025-09-04 15:36:12
-================================================================
+#### Device Group Analysis
+```bash
+python3 zone-services-report.py \
+  --host https://firemon.example.com \
+  --username apiuser \
+  --password 'password' \
+  --device-group 10 \
+  --non-interactive
 ```
+
+#### All Devices in Domain
+```bash
+python3 zone-services-report.py \
+  --host https://firemon.example.com \
+  --username apiuser \
+  --password 'password' \
+  --all-devices \
+  --non-interactive
+```
+
+### Advanced Filtering Examples
+
+#### Filter by Specific Zones
+```bash
+python3 zone-services-report.py \
+  --device-id 123 \
+  --zones "Trust,DMZ,Untrust" \
+  --non-interactive
+```
+
+#### Filter by Subnets
+```bash
+python3 zone-services-report.py \
+  --device-id 123 \
+  --src-subnets "10.0.0.0/8,172.16.0.0/12" \
+  --dst-subnets "192.168.0.0/16" \
+  --non-interactive
+```
+
+#### Exclude Same-Zone Traffic
+```bash
+python3 zone-services-report.py \
+  --device-id 123 \
+  --exclude-same-zone \
+  --non-interactive
+```
+
+#### Highlight Public IP Rules
+```bash
+python3 zone-services-report.py \
+  --device-id 123 \
+  --show-non-rfc1918 \
+  --non-interactive
+```
+
+## Command-Line Options
+
+### Connection Options
+| Option | Description | Example |
+|--------|-------------|---------|
+| `--host` | FireMon server URL | `https://firemon.example.com` |
+| `--username` | API username | `apiuser` |
+| `--password` | API password | `password123` |
+
+### Device Selection Options
+| Option | Description | Example |
+|--------|-------------|---------|
+| `--device-id` | Single device ID | `123` |
+| `--device-ids` | Comma-separated device IDs | `"123,456,789"` |
+| `--all-devices` | Process all devices in domain | (flag only) |
+| `--device-group` | Device group ID | `10` |
+
+### Filtering Options
+| Option | Description | Example |
+|--------|-------------|---------|
+| `--zones` | Comma-separated zone names to include | `"Trust,DMZ,Untrust"` |
+| `--src-subnets` | Source subnet filter (CIDR notation) | `"10.0.0.0/8,172.16.0.0/12"` |
+| `--dst-subnets` | Destination subnet filter (CIDR notation) | `"192.168.0.0/16"` |
+| `--exclude-same-zone` | Exclude same-zone traffic | (flag only) |
+| `--show-non-rfc1918` | Highlight zones with public IPs | (flag only) |
+
+### Report Options
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--report-type` | Output format: `csv`, `html`, or `both` | `both` |
+| `--output-dir` | Directory for report files | `reports` |
+| `--obfuscate-ips` | Obfuscate IPs in logs | `True` |
+| `--no-obfuscate-ips` | Disable IP obfuscation | (flag only) |
+
+### Execution Options
+| Option | Description |
+|--------|-------------|
+| `--non-interactive` | Run without prompts (for automation) |
+
+## Output Files
+
+Reports are saved in the specified output directory (default: `reports/`) with timestamps:
+
+### CSV Report Format
+- **Filename**: `zone_access_matrix_{device_name}_{timestamp}.csv`
+- **Content**: Matrix showing zone-to-zone access with rule counts, services, and applications
+- **Example Cell**: `Rules: 5 | Services: tcp/443, tcp/80 | Apps: HTTPS, HTTP`
+
+### HTML Report Format
+- **Filename**: `zone_access_matrix_{device_name}_{timestamp}.html`
+- **Features**:
+  - Interactive clickable cells
+  - Detailed modal popups with services/applications
+  - Direct links to FireMon rule views
+  - Sticky headers for large matrices
+  - Color coding for access types:
+    - Blue: Cross-zone access
+    - Purple: Same-zone access
+    - Red: Contains public/external IPs (when `--show-non-rfc1918` is used)
+    - Gray: No access
+<img width="1918" height="946" alt="image" src="https://github.com/user-attachments/assets/3d51c82c-2130-4bad-a8c5-a0aae66fa21d" />
+
+## Report Interpretation
+
+### Matrix Cells
+Each cell in the matrix represents potential communication from a source zone (row) to a destination zone (column):
+- **Number**: Count of ACCEPT rules allowing this communication
+- **Empty**: No rules permit this communication
+- **✕**: Same-zone traffic excluded (when using `--exclude-same-zone`)
+
+### Public IP Detection
+When using `--show-non-rfc1918`:
+- Red cells indicate zone pairs with rules containing non-RFC1918 (public/external) IP addresses
+- Helps identify potential internet-facing rules or connections to external services
+
+### Service/Application Details
+Click any cell in the HTML report to view:
+- Complete list of allowed services/ports
+- Applications permitted
+- Direct link to view rules in FireMon
+- Separate link for public IP rules only (if applicable)
 
 ## Logging
 
-The script creates a `script.log` file with detailed debug information, including:
+The script creates a detailed log file `zone-services-report.log` in the execution directory containing:
 - API calls and responses
 - Rule processing details
 - Error messages
@@ -169,54 +235,68 @@ The script creates a `script.log` file with detailed debug information, includin
 
 ### Common Issues
 
-1. **Import Error for requests module**
-   - The script automatically searches for FireMon Python libraries
-   - Check that FireMon is properly installed
+#### Authentication Failed
+- Verify credentials are correct
+- Ensure user has API access permissions
+- Check if API is enabled on FireMon server
 
-2. **Authentication Failed**
-   - Verify your credentials
-   - Ensure the FireMon API is accessible
-   - Check the URL format (should be `https://hostname` without `/api`)
+#### No Devices Found
+- Verify device IDs are correct
+- Check user permissions for device access
+- Ensure devices exist in the specified domain
 
-3. **No Rules Found**
-   - Verify the device ID exists
-   - Check user permissions for the device
-   - Review the `script.log` for detailed error messages
+#### Import Errors
+- Script automatically detects FireMon Python paths
+- If issues persist, manually verify FireMon installation paths
+- Check that requests module is available in FireMon environment
 
-4. **Large Report Generation**
-   - For environments with many zones, report generation may take several minutes
-   - The script processes rules in batches of 100 for efficiency
-   - Progress indicators show current status
+#### Large Reports
+- For environments with many zones, consider:
+  - Using zone filters to focus on specific areas
+  - Generating separate reports for different device groups
+  - Using subnet filters to reduce rule count
 
-### Performance Tips
+### Performance Considerations
 
-- For large environments, consider processing device groups instead of all devices
-- Use the HTML report for interactive exploration
-- Use the CSV report for data analysis in Excel or other tools
-- Reports are cached with timestamps, so previous reports are never overwritten
+- Large device groups may take several minutes to process
+- API rate limits may affect processing speed
+- Consider running during off-peak hours for large analyses
 
 ## Security Notes
 
-- IP addresses are obfuscated by default in logs (X.X.X.X)
-- Credentials are never logged
-- HTTPS certificate verification is disabled for self-signed certificates
-- Reports contain security policy information - handle with appropriate care
+- Credentials are not stored by the script
+- Use `--obfuscate-ips` (default) to hide sensitive IP information in logs
+- Reports may contain sensitive network topology information - handle accordingly
+- Consider using service accounts with read-only permissions
 
-## Support
+## Example Cron Job
 
-For issues or questions:
-1. Check the `script.log` file for detailed error information
-2. Verify FireMon API accessibility
-3. Ensure proper permissions for the authenticated user
-4. Contact your FireMon administrator for API access issues
-
-## Version History
-
-- **1.0.0** - Initial release with basic CSV export
-- **2.0.0** - Added HTML matrix view with interactive features
-- **2.1.0** - Added timestamps and CSV matrix format
-- **2.1.1** - Fixed sticky headers and improved UI
+To run daily analysis of critical zones:
+```bash
+0 2 * * * /usr/bin/python3 /path/to/zone-services-report.py \
+  --host https://firemon.example.com \
+  --username apiuser \
+  --password 'password' \
+  --device-group 10 \
+  --zones "DMZ,Internet,Internal" \
+  --show-non-rfc1918 \
+  --output-dir /var/reports/firemon \
+  --non-interactive >> /var/log/firemon-report.log 2>&1
+```
 
 ## License
 
-This script is provided as-is for use with FireMon Security Manager installations.
+This script is provided as-is for use with FireMon Security Manager. Ensure compliance with your organization's policies before deployment.
+
+## Support
+
+For issues related to:
+- FireMon API: Consult FireMon documentation or support
+- Script functionality: Review the log file for detailed error messages
+- Network connectivity: Verify firewall rules allow API access
+
+## Version History
+
+- **1.0.0**: Initial release with zone matrix reporting
+- **1.1.0**: Added public IP detection and sticky headers
+- **1.2.0**: Enhanced filtering options and non-interactive mode

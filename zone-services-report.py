@@ -14,6 +14,12 @@ from pathlib import Path
 from datetime import datetime
 import json
 import ipaddress
+import subprocess
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 
 # Set up logging configuration near the top
 logging.basicConfig(
@@ -533,20 +539,54 @@ def process_rules_for_matrix(rules, show_non_rfc1918=False):
     return access_details
 
 # Process security rules to extract relevant data for CSV matrix format
-def process_rules_to_csv_matrix(api_url, token, rules, output_file, obfuscate_ips=True, 
-                                exclude_same_zone=False, show_non_rfc1918=False):
+def process_rules_to_csv_matrix(api_url, token, rules, output_file, obfuscate_ips=True,
+                                exclude_same_zone=False, show_non_rfc1918=False, show_unused=False, debug=False):
     print(f"\n📝 Generating CSV matrix report...")
-    
+
     # Process rules to get access details
     access_details = process_rules_for_matrix(rules, show_non_rfc1918)
-    
-    # Get sorted list of all zones
-    all_zones = set()
-    for src in access_details:
-        all_zones.add(src)
-        for dst in access_details[src]:
-            all_zones.add(dst)
-    zones = sorted(all_zones)
+
+    # Debug: count total zone combinations
+    if debug:
+        total_combinations = sum(1 for src in access_details for dst in access_details[src])
+        active_combinations = sum(1 for src in access_details for dst in access_details[src] if access_details[src][dst]['count'] > 0)
+        print(f"   🐛 DEBUG: Total zone combinations: {total_combinations}, Active: {active_combinations}")
+        logging.debug(f"CSV: Total zone combinations in access_details: {total_combinations}, Active: {active_combinations}")
+
+    # If show_unused is False, only include zones that have at least one rule
+    if not show_unused:
+        # Only include zones that have rules both as source AND as destination
+        # This prevents showing zones that only appear in one direction with all empty cells in the other
+        zones_as_src = set()
+        zones_as_dst = set()
+
+        for src in access_details:
+            for dst in access_details[src]:
+                if access_details[src][dst]['count'] > 0:
+                    # Don't include excluded same-zone combinations
+                    if not (exclude_same_zone and src == dst):
+                        zones_as_src.add(src)
+                        zones_as_dst.add(dst)
+
+        # Only include zones that appear as both source AND destination
+        used_zones = zones_as_src & zones_as_dst  # Intersection
+        zones = sorted(used_zones)
+
+        if debug:
+            print(f"   🐛 DEBUG: Zones as source: {len(zones_as_src)}, as destination: {len(zones_as_dst)}")
+            print(f"   🐛 DEBUG: Zones in both (filtered): {zones}")
+        print(f"   ℹ️  Filtering to {len(zones)} zones with bidirectional rules (hiding unused)")
+    else:
+        # Get all zones that appear in any combination
+        all_zones = set()
+        for src in access_details:
+            all_zones.add(src)
+            for dst in access_details[src]:
+                all_zones.add(dst)
+        zones = sorted(all_zones)
+        if debug:
+            print(f"   🐛 DEBUG: All zones: {zones}")
+        print(f"   ℹ️  Including all {len(zones)} zones (showing unused)")
 
     # Write CSV in matrix format with timestamp
     with open(output_file, mode='w', newline='', encoding='utf-8') as file:
@@ -602,27 +642,61 @@ def process_rules_to_csv_matrix(api_url, token, rules, output_file, obfuscate_ip
     print(f"✅ CSV zone matrix report generated with {len(zones)}x{len(zones)} cells and {access_paths_count} access paths")
 
 # Generate a clean access matrix HTML report with service/application details
-def generate_html_matrix(rules, output_html, device_name, api_url, token, context_type='device', 
+def generate_html_matrix(rules, output_html, device_name, api_url, token, context_type='device',
                         context_id=None, obfuscate_ips=True, exclude_same_zone=False,
-                        show_non_rfc1918=False):
+                        show_non_rfc1918=False, show_unused=False, debug=False):
     """
     Generate HTML matrix report with page-level scrolling and sticky headers.
     """
     print(f"\n📊 Generating HTML matrix report...")
-    
+
     # Extract base URL from api_url (remove /api part)
     base_url = api_url.replace('/securitymanager/api', '').replace('/api', '')
-    
+
     # Process rules to get access details
     access_details = process_rules_for_matrix(rules, show_non_rfc1918)
-    
-    # Get sorted list of all zones
-    all_zones = set()
-    for src in access_details:
-        all_zones.add(src)
-        for dst in access_details[src]:
-            all_zones.add(dst)
-    zones = sorted(all_zones)
+
+    # Debug: count total zone combinations
+    if debug:
+        total_combinations = sum(1 for src in access_details for dst in access_details[src])
+        active_combinations = sum(1 for src in access_details for dst in access_details[src] if access_details[src][dst]['count'] > 0)
+        print(f"   🐛 DEBUG: Total zone combinations: {total_combinations}, Active: {active_combinations}")
+        logging.debug(f"HTML: Total zone combinations in access_details: {total_combinations}, Active: {active_combinations}")
+
+    # If show_unused is False, only include zones that have at least one rule
+    if not show_unused:
+        # Only include zones that have rules both as source AND as destination
+        # This prevents showing zones that only appear in one direction with all empty cells in the other
+        zones_as_src = set()
+        zones_as_dst = set()
+
+        for src in access_details:
+            for dst in access_details[src]:
+                if access_details[src][dst]['count'] > 0:
+                    # Don't include excluded same-zone combinations
+                    if not (exclude_same_zone and src == dst):
+                        zones_as_src.add(src)
+                        zones_as_dst.add(dst)
+
+        # Only include zones that appear as both source AND destination
+        used_zones = zones_as_src & zones_as_dst  # Intersection
+        zones = sorted(used_zones)
+
+        if debug:
+            print(f"   🐛 DEBUG: Zones as source: {len(zones_as_src)}, as destination: {len(zones_as_dst)}")
+            print(f"   🐛 DEBUG: Zones in both (filtered): {zones}")
+        print(f"   ℹ️  Filtering to {len(zones)} zones with bidirectional rules (hiding unused)")
+    else:
+        # Get all zones that appear in any combination
+        all_zones = set()
+        for src in access_details:
+            all_zones.add(src)
+            for dst in access_details[src]:
+                all_zones.add(dst)
+        zones = sorted(all_zones)
+        if debug:
+            print(f"   🐛 DEBUG: All zones: {zones}")
+        print(f"   ℹ️  Including all {len(zones)} zones (showing unused)")
 
     # Generate HTML with modal for details and improved scrolling
     html_content = f"""<!DOCTYPE html>
@@ -1220,6 +1294,75 @@ def sanitize_filename(name):
     """Sanitize the device name to be used as a filename."""
     return "".join(c for c in name if c.isalnum() or c in (' ', '_', '-')).rstrip()
 
+def send_email_with_attachments(email_from, email_to_list, subject, body, attachments):
+    """
+    Send email with attachments using sendmail.
+
+    Args:
+        email_from: Sender email address
+        email_to_list: List of recipient email addresses
+        subject: Email subject
+        body: Email body text
+        attachments: List of file paths to attach
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Create message
+        msg = MIMEMultipart()
+        msg['From'] = email_from
+        msg['To'] = ', '.join(email_to_list)
+        msg['Subject'] = subject
+
+        # Add body
+        msg.attach(MIMEText(body, 'plain'))
+
+        # Attach files
+        for file_path in attachments:
+            if not os.path.exists(file_path):
+                logging.warning(f"Attachment file not found: {file_path}")
+                continue
+
+            with open(file_path, 'rb') as f:
+                part = MIMEBase('application', 'octet-stream')
+                part.set_payload(f.read())
+                encoders.encode_base64(part)
+                part.add_header('Content-Disposition', f'attachment; filename={os.path.basename(file_path)}')
+                msg.attach(part)
+
+        # Send using sendmail
+        sendmail_path = '/usr/sbin/sendmail'
+        if not os.path.exists(sendmail_path):
+            # Try alternative locations
+            for alt_path in ['/usr/bin/sendmail', '/sbin/sendmail']:
+                if os.path.exists(alt_path):
+                    sendmail_path = alt_path
+                    break
+
+        if not os.path.exists(sendmail_path):
+            logging.error("sendmail not found in standard locations")
+            print("❌ Error: sendmail not found. Please install sendmail or specify correct path.")
+            return False
+
+        # Use sendmail to send the email
+        process = subprocess.Popen([sendmail_path, '-t', '-oi'], stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = process.communicate(msg.as_bytes())
+
+        if process.returncode != 0:
+            logging.error(f"sendmail failed with return code {process.returncode}: {stderr.decode()}")
+            print(f"❌ Failed to send email: {stderr.decode()}")
+            return False
+
+        logging.info(f"Email sent successfully to {', '.join(email_to_list)}")
+        print(f"✅ Email sent successfully to {', '.join(email_to_list)}")
+        return True
+
+    except Exception as e:
+        logging.error(f"Error sending email: {e}")
+        print(f"❌ Error sending email: {e}")
+        return False
+
 def parse_zones_list(zones_str):
     """Parse comma-separated zones list."""
     if not zones_str:
@@ -1255,7 +1398,18 @@ if __name__ == "__main__":
                        help="Exclude same-zone traffic from report (default: include same-zone)")
     parser.add_argument('--show-non-rfc1918', action='store_true', default=False,
                        help="Highlight zone combinations that have rules with public/external (non-RFC1918) IP addresses")
-    
+    parser.add_argument('--show-unused', action='store_true', default=False,
+                       help="Show unused zone combinations (combinations with 0 rules)")
+    parser.add_argument('--debug', action='store_true', default=False,
+                       help="Enable debug output showing filtering details")
+
+    # Email options
+    parser.add_argument('--email-to', help="Email address(es) to send report to (comma-separated)")
+    parser.add_argument('--email-from', default='firemon-reports@localhost',
+                       help="Email address to send from (default: firemon-reports@localhost)")
+    parser.add_argument('--email-subject', help="Email subject line (default: auto-generated)")
+    parser.add_argument('--email-body', help="Email body text (default: auto-generated)")
+
     # Report options
     parser.add_argument('--report-type', choices=['csv', 'html', 'both'], default='both', 
                        help="Type of report to generate")
@@ -1513,19 +1667,23 @@ if __name__ == "__main__":
 
     # Process and save rules to CSV matrix format
     if generate_csv:
-        process_rules_to_csv_matrix(api_url, token, all_rules, OUTPUT_FILE, 
-                                   obfuscate_ips=obfuscate_ips, 
+        process_rules_to_csv_matrix(api_url, token, all_rules, OUTPUT_FILE,
+                                   obfuscate_ips=obfuscate_ips,
                                    exclude_same_zone=args.exclude_same_zone,
-                                   show_non_rfc1918=args.show_non_rfc1918)
+                                   show_non_rfc1918=args.show_non_rfc1918,
+                                   show_unused=args.show_unused,
+                                   debug=args.debug)
         logging.info(f"CSV matrix report generated: {OUTPUT_FILE}")
 
     # Generate HTML matrix report
     if generate_html:
-        generate_html_matrix(all_rules, OUTPUT_HTML, display_name, api_url, token, 
-                           context_type=context_type, context_id=context_id, 
+        generate_html_matrix(all_rules, OUTPUT_HTML, display_name, api_url, token,
+                           context_type=context_type, context_id=context_id,
                            obfuscate_ips=obfuscate_ips,
                            exclude_same_zone=args.exclude_same_zone,
-                           show_non_rfc1918=args.show_non_rfc1918)
+                           show_non_rfc1918=args.show_non_rfc1918,
+                           show_unused=args.show_unused,
+                           debug=args.debug)
         logging.info(f"HTML report generated: {OUTPUT_HTML}")
 
     # Final summary
@@ -1543,6 +1701,7 @@ if __name__ == "__main__":
     if src_subnets or dst_subnets:
         print(f"   • Subnet filtering applied")
     print(f"   • Same-zone traffic: {'Excluded' if args.exclude_same_zone else 'Included (default)'}")
+    print(f"   • Unused zone combinations: {'Shown' if args.show_unused else 'Hidden (default)'}")
     print(f"   • Reports generated:")
     
     if generate_csv:
@@ -1556,8 +1715,76 @@ if __name__ == "__main__":
         print(f"      Size: {os.path.getsize(OUTPUT_HTML):,} bytes")
     
     print(f"\n   📁 Reports saved in: {os.path.abspath(reports_dir)}/")
+
+    # Email reports if requested
+    if args.email_to:
+        print("\n" + "=" * 60)
+        print("                   SENDING EMAIL")
+        print("=" * 60)
+
+        email_to_list = [email.strip() for email in args.email_to.split(',')]
+
+        # Prepare email subject
+        if args.email_subject:
+            email_subject = args.email_subject
+        else:
+            email_subject = f"FireMon Zone Access Matrix Report - {display_name} - {datetime.now().strftime('%Y-%m-%d')}"
+
+        # Prepare email body
+        if args.email_body:
+            email_body = args.email_body
+        else:
+            email_body = f"""FireMon Zone Access Matrix Report
+
+Device/Context: {display_name}
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+Summary:
+- Devices processed: {len(device_ids)}
+- Total rules analyzed: {len(all_rules)}
+- Matrix type: Zone-based
+- Same-zone traffic: {'Excluded' if args.exclude_same_zone else 'Included'}
+- Unused zone combinations: {'Shown' if args.show_unused else 'Hidden'}
+"""
+            if args.show_non_rfc1918:
+                email_body += "- Public IP detection: Enabled\n"
+            if zone_filter:
+                email_body += f"- Zones filtered: {', '.join(zone_filter)}\n"
+            if src_subnets or dst_subnets:
+                email_body += "- Subnet filtering applied\n"
+
+            email_body += "\nPlease find the attached report(s).\n\nThis is an automated report from FireMon."
+
+        # Collect attachments
+        attachments = []
+        if generate_csv and os.path.exists(OUTPUT_FILE):
+            attachments.append(OUTPUT_FILE)
+        if generate_html and os.path.exists(OUTPUT_HTML):
+            attachments.append(OUTPUT_HTML)
+
+        # Send email
+        if attachments:
+            print(f"\n📧 Sending email to: {', '.join(email_to_list)}")
+            print(f"   From: {args.email_from}")
+            print(f"   Subject: {email_subject}")
+            print(f"   Attachments: {len(attachments)} file(s)")
+
+            success = send_email_with_attachments(
+                args.email_from,
+                email_to_list,
+                email_subject,
+                email_body,
+                attachments
+            )
+
+            if not success:
+                logging.error("Failed to send email")
+        else:
+            print("❌ No report files to attach to email")
+            logging.error("No report files found to attach to email")
+
     print(f"\nCompleted at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
-    
+
     logging.info("All selected reports have been generated successfully.")
     logging.info(f"Base FireMon URL used for links: {api_host}")

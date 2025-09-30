@@ -311,7 +311,7 @@ An interactive matrix with:
 
 ## License
 
-Internal use only.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
 
 ## Support
 
